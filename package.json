@@ -19,6 +19,7 @@
   "author": "The Wit Team <help@wit.ai>",
   "dependencies": {
     "isomorphic-fetch": "^2.2.1",
+    "mongoose": "^4.6.8",
     "node-uuid": "^1.4.7",
     "nodemon": "^1.11.0"
   },

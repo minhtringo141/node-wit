@@ -19,8 +19,13 @@ const express = require('express');
 const fetch = require('node-fetch');
 const request = require('request');
 
+
+// adding
 var person = '';
-var blacklist = [];
+
+var mongoose = require('mongoose');
+mongoose.connect('mongodb://localhost/Chatbot');
+var BlacklistUser = require('./blacklistuser.model');
 
 
 let Wit = null;
@@ -41,9 +46,9 @@ const PORT = process.env.PORT || 8445;
 const WIT_TOKEN = 'BCVD5FCDHXHPIN4A557JP5QAOVMMI3H4';
 
 // Messenger API parameters
-const FB_PAGE_TOKEN = 'EAABovVd4sE8BALWNYYd1adTSHssD5lwJDq1AVNzTXZCdggqd2j2ZAKRa01ICdNnf0QY6Xqs7bHqnscS3ZAgUlpSV7jMRKZCnDZAZApkvlIvuxZCw5KmZA6YwZCGtM2UZBfREtsfInck0LPNnafzTLZCzgFq7LKBIZBMgZAQZAzveTm3U085gZDZD';
+const FB_PAGE_TOKEN = 'EAAX5IgrZBFTcBAP5woMBrhntJ3m1oeDumySNe8TlYecYP9DOqgfhLCDSpVHS6a4oGMbs21SUaAjYYbakV5ZC7PrCe3RpytbBP2X59AYOQOiQRdAsDb1Ki3orTUTqjluAdSo2jzpZCLFX6Wn0S8vAbrlWTkISLoZAQFX9oxuzxgZDZD';
 if (!FB_PAGE_TOKEN) { throw new Error('missing FB_PAGE_TOKEN') }
-const FB_APP_SECRET = 'cadb3fd8be030f8730913a66f688acae';
+const FB_APP_SECRET = '39cab0e9405f38ca72279a3ffeab6564';
 if (!FB_APP_SECRET) { throw new Error('missing FB_APP_SECRET') }
 
 let FB_VERIFY_TOKEN = 'aaaa';
@@ -225,66 +230,87 @@ app.post('/webhook', (req, res) => {
     data.entry.forEach(entry => {
       entry.messaging.forEach(event => {
         if (event.message && !event.message.is_echo) {
-          var flag = false;
+          
           // Yay! We got a new message!
           // We retrieve the Facebook user ID of the sender
           const sender = event.sender.id;
           console.log(sender);
 
-          // dung chatbot, tam thoi luu tren mang
-          blacklist.forEach(item =>{
-            if(item == sender){
-              flag = true;
-            }
-          })
           // We retrieve the user's current session, or create one if it doesn't exist
           // This is needed for our bot to figure out the conversation history
           const sessionId = findOrCreateSession(sender);
 
           // We retrieve the message content
           const {text, attachments} = event.message;
-          console.log(blacklist);
-          if (attachments) {
-            // We received an attachment
-            // Let's reply with an automatic message
-            fbMessage(sender, 'Sorry I can only process text messages for now.')
-            .catch(console.error);
-          } else if (text && flag == false) {
-            // We received a text message
-            if(text == 'kết thúc'){
-              delete sessions[sessionId];
-              blacklist.push(sender); 
-            }else {
+          
+          BlacklistUser.findOne({idUser: sender}).exec(function(err, data) {
+            if(data != null){
+              console.log('Get user in blacklist');
+              data.lastMessageAt = Date.now();
+              data.save(function(err, newData){
+                if (err){
+                  console.error('Save fail !');
+                }
+              });
+            }else{
+              if (attachments) {
+                // We received an attachment
+                // Let's reply with an automatic message
+                fbMessage(sender, 'Sorry I can only process text messages for now.')
+                .catch(console.error);
+              } else if (text) {
+                // We received a text message
+                if(text == 'ket thuc'){
+                  delete sessions[sessionId];
 
-            
-              // Let's forward the message to the Wit.ai Bot Engine
-              // This will run all actions until our bot has nothing left to do
-              wit.runActions(
-                sessionId, // the user's current session
-                text, // the user's message
-                sessions[sessionId].context // the user's current session state
-              ).then((context) => {
-                // Our bot did everything it has to do.
-                // Now it's waiting for further messages to proceed.
-                console.log('Waiting for next user messages');
+                  // mongoDb
+                  var newBlacklistUser = {
+                    idUser: sender,
+                    createdAt: Date.now(),
+                    lastMessageAt: Date.now(),
+                    message: text
+                  }
 
-                // Based on the session state, you might want to reset the session.
-                // This depends heavily on the business logic of your bot.
-                // Example:
-                // if (context["done"]) {
-                //   delete sessions[sessionId];
-                // }
+                  BlacklistUser.create(newBlacklistUser, function(err, data){
+                    if(err){
+                      console.error('Err saving to mongodb');
+                    }
+                  });
+                }else {
+
+                
+                  // Let's forward the message to the Wit.ai Bot Engine
+                  // This will run all actions until our bot has nothing left to do
+                  wit.runActions(
+                    sessionId, // the user's current session
+                    text, // the user's message
+                    sessions[sessionId].context // the user's current session state
+                  ).then((context) => {
+                    // Our bot did everything it has to do.
+                    // Now it's waiting for further messages to proceed.
+                    console.log('Waiting for next user messages');
+
+                    // Based on the session state, you might want to reset the session.
+                    // This depends heavily on the business logic of your bot.
+                    // Example:
+                    // if (context["done"]) {
+                    //   delete sessions[sessionId];
+                    // }
 
 
-                // Updating the user's current session state
-                sessions[sessionId].context = context;
-              })
-              .catch((err) => {
-                console.error('Oops! Got an error from Wit: ', err.stack || err);
-              })
+                    // Updating the user's current session state
+                    sessions[sessionId].context = context;
+                  })
+                  .catch((err) => {
+                    console.error('Oops! Got an error from Wit: ', err.stack || err);
+                  })
 
+                }
+              }
             }
-          }
+          });
+
+          
         } else {
           console.log('received event', JSON.stringify(event));
         }
